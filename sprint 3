@@ -1,0 +1,155 @@
+-- 1. Creamos los datasets (carpetas) en la Unión Europea
+CREATE SCHEMA IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_bronze`
+OPTIONS ( location = 'EU');
+
+CREATE SCHEMA IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_silver`
+OPTIONS ( location = 'EU');
+
+-- Este comando va en la terminal negra (Cloud Shell), no en BigQuery:
+-- bq --location=EU mk -d sprint3-analytics-daniel-lopez:sprint3_gold
+
+-- 2. Creamos las tablas externas en la capa Bronze
+CREATE EXTERNAL TABLE IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw`
+OPTIONS (format = 'CSV', uris = ['gs://bootcamp-data-analytics-public/ERP/transactions.csv'], field_delimiter = ';');
+
+-- creamos la tabla companies_raw
+CREATE EXTERNAL TABLE IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_bronze.companies_raw`
+(   id STRING,
+    company_name STRING,
+    phone STRING,
+    email STRING,
+    country STRING,
+    website STRING)
+OPTIONS ( format = 'CSV', uris = ['gs://bootcamp-data-analytics-public/ERP/companies.csv'], skip_leading_rows = 1);
+
+-- creamos la tabla american_users_raw
+CREATE EXTERNAL TABLE IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_bronze.american_users_raw`
+OPTIONS ( format = 'CSV', uris = ['gs://bootcamp-data-analytics-public/CRM/american_users.csv'], skip_leading_rows = 1);
+
+-- creamos la tabla european_users_raw
+CREATE EXTERNAL TABLE IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_bronze.european_users_raw`
+OPTIONS ( format = 'CSV', uris = ['gs://bootcamp-data-analytics-public/CRM/european_users.csv'], skip_leading_rows = 1);
+
+-- creamos la tabla credit_cards_raw
+CREATE EXTERNAL TABLE IF NOT EXISTS `sprint3-analytics-daniel-lopez.sprint3_bronze.credit_cards_raw`
+OPTIONS ( format = 'CSV', uris = ['gs://bootcamp-data-analytics-public/CRM/credit_cards.csv'], skip_leading_rows = 1);
+
+-- Creamos la tabla nativa
+CREATE OR REPLACE TABLE `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw_native` AS
+SELECT * FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw`;
+-- exercici 3 no se puede escribir aqui
+-- 4
+CREATE OR REPLACE TABLE `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw_native` AS
+SELECT * FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw`;
+-- el 5 solo hemos de mirar codigo no ejecutar asi que no lo adjunto
+--6
+SELECT DATE(timestamp) AS dia, SUM(amount) AS total_ingressos
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw_native`
+WHERE EXTRACT(YEAR FROM timestamp) = 2021
+GROUP BY dia
+ORDER BY total_ingressos DESC
+LIMIT 5;
+--7
+SELECT company_name,country,DATE(timestamp)
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw_native`
+JOIN `sprint3-analytics-daniel-lopez.sprint3_bronze.companies_raw`
+ON(business_id) = company_id
+WHERE amount BETWEEN 100 AND 200 AND DATE(timestamp) IN ('2015-04-29', '2018-07-20', '2024-03-13')
+ORDER BY DATE(timestamp);
+--nivell 2 
+-- ex1 en el pdf estan incompletos ell codigo
+CREATE OR REPLACE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.products_clean` AS
+SELECT 
+    id AS product_id, 
+    product_name AS name,
+    CAST(REPLACE(warehouse_id, 'WH-', '') AS INT64) AS warehouse_id,
+    CAST(price AS FLOAT64) AS price,
+    weight
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.products_raw`;
+exx2explicacio al pdf
+
+CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.transactions_clean` AS
+SELECT id AS transaction_id,
+    card_id,
+    business_id,
+    SAFE_CAST(timestamp AS TIMESTAMP) AS timestamp,
+    IFNULL(SAFE_CAST(amount AS FLOAT64), 0) AS amount,
+    declined,
+    ARRAY(
+        SELECT SAFE_CAST(TRIM(item) AS INT64)
+        FROM UNNEST(SPLIT(CAST(product_ids AS STRING), ',')) AS item
+        WHERE TRIM(item) != '') AS product_ids,
+    user_id,
+    SAFE_CAST(lat AS FLOAT64) AS lat,
+    SAFE_CAST(longitude AS FLOAT64) AS longitude
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw`;
+-- ex3
+CREATE OR REPLACE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.users_combined` AS
+SELECT
+  id AS user_id,
+  name,
+  surname,
+  phone,
+  email,
+  birth_date,
+  country,
+  city,
+  postal_code,
+  address,
+  'USA' AS origen
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.american_users_raw`
+-- ex4
+
+CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.companies_clean` AS
+SELECT *
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.companies_raw`;
+
+CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.credit_cards_clean`
+SELECT
+  id AS card_id,
+  user_id,
+  iban,
+  pan,
+  pin,
+  cvv,
+  track1,
+  track2,
+  expiring_date
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.credit_cards_raw`;
+--nivell 3 ex1
+CREATE VIEW `sprint3-analytics-daniel-lopez.sprint3_gold.nivel3ex1` AS
+SELECT
+  company_name,
+  phone,
+  country,
+  ROUND(AVG(amount), 2) AS avg_amount,
+  CASE
+    WHEN AVG(amount) > 260 THEN 'Premium'
+    ELSE 'Standard'
+  END AS client_tier
+FROM `sprint3-analytics-daniel-lopez.sprint3_silver.companies_clean`
+JOIN `sprint3-analytics-daniel-lopez.sprint3_silver.transactions_clean`
+  ON company_id = CAST(business_id AS STRING)
+GROUP BY
+  company_name,
+  phone,
+  country;
+-- ex2
+CREATE OR REPLACE TABLE `sprint3_gold.product_sales_ranking` AS
+SELECT
+  productos.name AS product_name,
+  productos.product_id,
+  productos.price,
+  productos.colour AS color,
+  COALESCE(resumen_ventas.total_sold, 0) AS total_sold
+FROM `sprint3_silver.products_clean` AS productos
+LEFT JOIN (
+  SELECT
+    id_producto_vendido,
+    COUNT(*) AS total_sold
+  FROM `sprint3_silver.transactions_clean`,
+  UNNEST(product_ids) AS id_producto_vendido
+  GROUP BY id_producto_vendido
+) AS resumen_ventas
+  ON productos.product_id = resumen_ventas.id_producto_vendido
+ORDER BY total_sold DESC;
