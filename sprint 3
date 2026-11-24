@@ -45,7 +45,7 @@ SELECT * FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw`;
 --6
 SELECT DATE(timestamp) AS dia, SUM(amount) AS total_ingressos
 FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.transactions_raw_native`
-WHERE EXTRACT(YEAR FROM timestamp) = 2021
+WHERE EXTRACT(YEAR FROM timestamp) = 2021 AND declined=0
 GROUP BY dia
 ORDER BY total_ingressos DESC
 LIMIT 5;
@@ -66,7 +66,7 @@ SELECT
     CAST(price AS FLOAT64) AS price,
     weight
 FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.products_raw`;
-exx2explicacio al pdf
+-- exx2explicacio al pdf
 
 CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.transactions_clean` AS
 SELECT id AS transaction_id,
@@ -98,13 +98,26 @@ SELECT
   address,
   'USA' AS origen
 FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.american_users_raw`
+UNION all
+ id AS user_id,
+  name,
+  surname,
+  phone,
+  email,
+  birth_date,
+  country,
+  city,
+  postal_code,
+  address,
+  'EU' AS origen
+FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.european_users_raw`
 -- ex4
 
 CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.companies_clean` AS
 SELECT *
 FROM `sprint3-analytics-daniel-lopez.sprint3_bronze.companies_raw`;
 
-CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.credit_cards_clean`
+CREATE TABLE `sprint3-analytics-daniel-lopez.sprint3_silver.credit_cards_clean`AS
 SELECT
   id AS card_id,
   user_id,
